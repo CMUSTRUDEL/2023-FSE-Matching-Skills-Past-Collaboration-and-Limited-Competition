@@ -1,0 +1,628 @@
+
+
+
+### Generate Table 3 in the paper
+```{r}
+library(e1071)
+library(readr)
+library(lme4)
+library(MuMIn)
+library(car)
+library(lmtest)
+library(sandwich)
+
+year_string = '2015'
+
+
+data_join = read_csv(sprintf('./data/author_project_join_com_Python_year_before_%s_sample_factor_0.3_true_random.csv', year_string)) 
+
+model_individual = glm(join_flag~
+      + log(social_strength + 1)
+      + technical_contain
+      , data = data_join
+      ,family = "binomial")
+summary(model_individual)
+coeftest(model_individual, vcov. = vcovCL(model_individual, cluster = ~author+woc, type = "HC0"))
+# cluster the standard coefficient at the author and project level
+
+# vif(model_individual)
+summary(model_individual)
+AIC(model_individual)
+BIC(model_individual)
+r.squaredGLMM(model_individual)
+
+
+model_individual_competition = glm(join_flag~
+      + log(social_strength + 1)
+      + technical_contain
+      + log(woc_within_one_hop_count + 1)
+      + social_strength_percentile
+      + technical_contain_percentile
+
+      , data = data_join
+
+      ,family = "binomial")
+summary(model_individual_competition)
+
+coeftest(model_individual_competition, vcov. = vcovCL(model_individual_competition, cluster = ~author+woc, type = "HC0"))
+
+vif(model_individual_competition)
+summary(model_individual_competition)
+anova(model_individual_competition)
+r.squaredGLMM(model_individual_competition)
+
+
+library(stargazer)
+stargazer(model_individual, model_individual_competition, omit = c('Constant'), digits = 2, omit.stat = c('ser', 'll', 'bic'), single.row = TRUE, star.cutoffs = c(.05, .01, .001), star.char = c("*", "**", "***"), covariate.labels = c('Social strength (log)', 'Technical similarity', 'Number of competing projects (log)','Social strength percentile', 'Technical similarity percentile'))
+
+
+```
+
+
+
+
+
+
+### Generate Table 4 in the paper, step 1, data process
+```{r}
+library(car)
+library(lme4)
+library(MuMIn)
+library(relaimpo)
+library(readr)
+year_string = '2020'
+author_woc_threshold = '10' # change to 100 for validation purposes
+
+
+
+data_survival = read_csv(sprintf('./data/regre_survival_analysis_com_Python_survival_year_before_2022_period_year_at_%s_author_threshold_%s_woc_threshold_%s.csv', year_string,author_woc_threshold,author_woc_threshold))
+
+data_basic_network = read_csv(sprintf('./data/regre_basic_network_metrics_com_Python_survival_year_before_2022_period_year_at_%s_author_threshold_%s_woc_threshold_%s.csv', year_string,author_woc_threshold,author_woc_threshold))
+
+
+data_chara = read_csv(sprintf('./data/regre_individual_chara_com_Python_survival_year_before_2022_period_year_at_%s_author_threshold_%s_woc_threshold_%s.csv', year_string,author_woc_threshold,author_woc_threshold))
+
+data_merge = merge(data_survival, data_basic_network,by = 'woc')
+
+data_merge = merge(data_merge, data_chara,by = 'woc')
+
+hist(log(data_merge$project_age+1))
+hist(log(data_merge$all_dev_alltime_count+1))
+hist(log(data_merge$all_dev_recent_count+1))
+hist(log(data_merge$all_past_commit_count+1))
+hist(log(data_merge$recent_past_commit_count+1))
+hist(log(data_merge$all_has_embedding_social_within_one_hop_count+1))
+
+hist(log(data_merge$new_attracted_author_count_one_year_all+1))
+hist(log(data_merge$new_attracted_author_count_one_year_has_embedding+1))
+
+data_merge$only_social_value_transformed = log(data_merge$only_social_value+1)
+data_merge$only_technical_value_transformed = log(data_merge$only_technical_value + 1)
+data_merge$individual_value_transformed = log(data_merge$individual_value + 1)
+data_merge$only_competition_value_transformed = log(data_merge$only_competition_value + 1)
+data_merge$all_value_transformed = log(data_merge$all_value_agg + 1)
+
+hist(data_merge$only_social_value_transformed)
+hist(data_merge$only_technical_value_transformed)
+hist(data_merge$individual_value_transformed)
+hist(data_merge$all_value_transformed)
+
+
+if (year_string == '2015'){
+data_merge_no_outlier = subset(data_merge,   project_age > exp(2) & project_age < exp(9)
+                                           & all_dev_alltime_count < exp(6)
+                                           & all_dev_recent_count < exp(4)
+                                           & all_past_commit_count < exp(10)
+                                           & all_past_commit_count > exp(2)
+                                           & recent_past_commit_count < exp(8)
+                                           & new_attracted_author_count_one_year_all < exp(3)
+                                           & new_attracted_author_count_one_year_has_embedding < exp(2)
+                                           & only_social_value_transformed < 1
+                                           & only_technical_value_transformed < 1
+                                           & individual_value_transformed < 1
+                                           & all_value_transformed < 2
+                                      )
+}else if(year_string == '2016'){
+   data_merge_no_outlier = subset(data_merge,   project_age > exp(2) & project_age < exp(9)
+                                           & all_dev_alltime_count < exp(6)
+                                           & all_dev_recent_count < exp(4)
+                                           & all_past_commit_count < exp(10)
+                                           & recent_past_commit_count < exp(8)
+                                           & all_has_embedding_social_within_one_hop_count < exp(9)
+                                           & new_attracted_author_count_one_year_all < exp(4)
+                                           & new_attracted_author_count_one_year_has_embedding < exp(3)
+                                           & individual_value_transformed < 1
+                                           & all_value_transformed < 2
+                                      )
+}else if(year_string == '2017'){
+   data_merge_no_outlier = subset(data_merge,   project_age > exp(2) & project_age < exp(9)
+                                           & all_dev_alltime_count < exp(6)
+                                           & all_dev_recent_count < exp(4)
+                                           & all_past_commit_count < exp(10)
+                                           & all_past_commit_count > exp(2)
+                                           & recent_past_commit_count < exp(10)
+                                           & all_has_embedding_social_within_one_hop_count < exp(9)
+                                           & new_attracted_author_count_one_year_all < exp(4)
+                                           & new_attracted_author_count_one_year_has_embedding < exp(3)
+                                           & individual_value_transformed < 1
+                                           & all_value_transformed < 1
+                                      )
+}else if(year_string == '2018'){
+   data_merge_no_outlier = subset(data_merge,   project_age > exp(2) & project_age < exp(9)
+                                           & all_dev_alltime_count < exp(6)
+                                           & all_dev_recent_count < exp(4)
+                                           & all_past_commit_count < exp(10)
+                                           & all_past_commit_count > exp(2)
+                                           & recent_past_commit_count < exp(8)
+                                           & all_has_embedding_social_within_one_hop_count < exp(8)
+                                           & new_attracted_author_count_one_year_all < exp(4)
+                                           & new_attracted_author_count_one_year_has_embedding < exp(3)
+                                           & individual_value_transformed < 1
+                                           & all_value_transformed < 1
+                                      )
+}else if(year_string == '2019'){
+   data_merge_no_outlier = subset(data_merge,   project_age > exp(2) & project_age < exp(9)
+                                           & all_dev_alltime_count < exp(6)
+                                           & all_dev_recent_count < exp(4)
+                                           & all_past_commit_count < exp(10)
+                                           & all_past_commit_count > exp(2)
+                                           & recent_past_commit_count < exp(8)
+                                           & all_has_embedding_social_within_one_hop_count < exp(8)
+                                           & new_attracted_author_count_one_year_all < exp(4)
+                                           & new_attracted_author_count_one_year_has_embedding < exp(3)
+                                           & individual_value_transformed < 1
+                                           & all_value_transformed < 1
+                                      )
+}else if(year_string == '2020'){
+   data_merge_no_outlier = subset(data_merge,   project_age > exp(2) & project_age < exp(8.5)
+                                           & all_dev_alltime_count < exp(6)
+                                           & all_dev_recent_count < exp(4)
+                                           & all_past_commit_count < exp(10)
+                                           & all_past_commit_count > exp(2)
+                                           & recent_past_commit_count < exp(8)
+                                           & all_has_embedding_social_within_one_hop_count < exp(8)
+                                           & new_attracted_author_count_one_year_all < exp(4)
+                                           & new_attracted_author_count_one_year_has_embedding < exp(2)
+                                           & individual_value_transformed < 1
+                                           & all_value_transformed < 1
+                                      )
+}else if(year_string == '2014'){
+   data_merge_no_outlier = subset(data_merge,   project_age > exp(2) & project_age < exp(8.5)
+                                           & all_dev_alltime_count < exp(6)
+                                           & all_dev_recent_count < exp(4)
+                                           & all_past_commit_count < exp(10)
+                                           & all_past_commit_count > exp(2)
+                                           & recent_past_commit_count < exp(8)
+                                           & all_has_embedding_social_within_one_hop_count < exp(8)
+                                           & new_attracted_author_count_one_year_all < exp(4)
+                                           & new_attracted_author_count_one_year_has_embedding < exp(2)
+                                           & individual_value_transformed < 1
+                                           & all_value_transformed < 1
+                                      )
+}
+
+
+```
+
+
+### Generate Table 4 in the paper, step 2, main model
+```{r}
+regression_no_environment = lm(log(new_attracted_author_count_one_year_has_embedding + 1)~
+                                                log(project_age + 1)
+                                              + log(all_dev_alltime_count + 1)
+                                              + log(all_dev_recent_count + 1)
+                                              + log(all_past_commit_count + 1)
+                                              + log(recent_past_commit_count + 1)
+                                              + as.logical(woc_has_readme_flag)
+                                              + as.logical(woc_has_license_flag)
+                                          ,data = data_merge_no_outlier)
+vif(regression_no_environment)
+summary(regression_no_environment)
+
+
+regression_basic = lm(log(new_attracted_author_count_one_year_has_embedding + 1)~
+                                                log(project_age + 1)
+                                              + log(all_dev_alltime_count + 1)
+                                              + log(all_dev_recent_count + 1)
+                                              + log(all_past_commit_count + 1)
+                                              + log(recent_past_commit_count + 1)
+                                              + as.logical(woc_has_readme_flag)
+                                              + as.logical(woc_has_license_flag)
+                                              + log(all_has_embedding_social_within_one_hop_count + 1)
+                                          ,data = data_merge_no_outlier)
+
+vif(regression_basic)
+summary(regression_basic)
+
+
+regression_individual = lm(log(new_attracted_author_count_one_year_has_embedding + 1)~
+                                                log(project_age + 1)
+                                              + log(all_dev_alltime_count + 1)
+                                              + log(all_dev_recent_count + 1)
+                                              + log(all_past_commit_count + 1)
+                                              + log(recent_past_commit_count + 1)
+                                              + as.logical(woc_has_readme_flag)
+                                              + as.logical(woc_has_license_flag)
+                                              + log(all_has_embedding_social_within_one_hop_count + 1)
+                                              + individual_value_transformed
+                                           
+                                          ,data = data_merge_no_outlier)
+
+vif(regression_individual)
+summary(regression_individual)
+
+
+regression_full = lm(log(new_attracted_author_count_one_year_has_embedding + 1)~
+                                                log(project_age + 1)
+                                              + log(all_dev_alltime_count + 1)
+                                              + log(all_dev_recent_count + 1)
+                                              + log(all_past_commit_count + 1)
+                                              + log(recent_past_commit_count + 1)
+                                              + as.logical(woc_has_readme_flag)
+                                              + as.logical(woc_has_license_flag)
+                                              + log(all_has_embedding_social_within_one_hop_count + 1)
+                                              + all_value_transformed
+                                          ,data = data_merge_no_outlier)
+
+
+
+vif(regression_full)
+summary(regression_full)
+
+
+library(stargazer)
+stargazer(regression_no_environment, regression_basic, regression_individual, regression_full, omit = c('Constant'), digits = 2, omit.stat = c('ser', 'f', 'rsq'), single.row = TRUE, star.cutoffs = c(.05, .01, .001), star.char = c("*", "**", "***"),covariate.labels = c('Project age (log)', 'Project total developer size (log)', 'Project recent developer size (log)', 'Project total commits (log)', 'Project recent commits (log)', 'Has readme', 'Has license', 'Labor pool size (log)','Effective size, no-competing variables (log)', 'Effective size, full variables (log)'))
+
+
+
+```
+
+
+
+
+### Negative bionminal regression (as a validation)
+```{r}
+library(pscl)
+
+
+regression_no_environment_nb = glm.nb(new_attracted_author_count_one_year_has_embedding~
+                                                log(project_age + 1)
+                                              + log(all_dev_alltime_count + 1)
+                                              + log(all_dev_recent_count + 1)
+                                              + log(all_past_commit_count + 1)
+                                              + log(recent_past_commit_count + 1)
+                                              + as.logical(woc_has_readme_flag)
+                                              + as.logical(woc_has_license_flag)
+                                          ,data = data_merge_no_outlier)
+summary(regression_no_environment_nb)
+
+regression_basic_nb = glm.nb(new_attracted_author_count_one_year_has_embedding~
+                                                log(project_age + 1)
+                                              + log(all_dev_alltime_count + 1)
+                                              + log(all_dev_recent_count + 1)
+                                              + log(all_past_commit_count + 1)
+                                              + log(recent_past_commit_count + 1)
+                                              + as.logical(woc_has_readme_flag)
+                                              + as.logical(woc_has_license_flag)
+                                              + log(all_has_embedding_social_within_one_hop_count + 1)
+                                              ,data = data_merge_no_outlier)
+summary(regression_basic_nb)
+
+
+regression_individual_nb = glm.nb(new_attracted_author_count_one_year_has_embedding~
+                                                log(project_age + 1)
+                                              + log(all_dev_alltime_count + 1)
+                                              + log(all_dev_recent_count + 1)
+                                              + log(all_past_commit_count + 1)
+                                              + log(recent_past_commit_count + 1)
+                                              + as.logical(woc_has_readme_flag)
+                                              + as.logical(woc_has_license_flag)
+                                              + log(all_has_embedding_social_within_one_hop_count + 1)
+                                              + individual_value_transformed
+                                              ,data = data_merge_no_outlier)
+summary(regression_individual_nb)
+
+regression_full_nb = glm.nb(new_attracted_author_count_one_year_has_embedding~
+                                                log(project_age + 1)
+                                              + log(all_dev_alltime_count + 1)
+                                              + log(all_dev_recent_count + 1)
+                                              + log(all_past_commit_count + 1)
+                                              + log(recent_past_commit_count + 1)
+                                              + as.logical(woc_has_readme_flag)
+                                              + as.logical(woc_has_license_flag)
+                                              + log(all_has_embedding_social_within_one_hop_count + 1)
+                                              + all_value_transformed
+                                          ,data = data_merge_no_outlier)
+
+
+summary(regression_full_nb)
+
+
+```
+
+
+### OLS with outcome variable being the number of all attracted developers (as a validation)
+```{r}
+
+
+regression_no_environment_allnew = lm(log(new_attracted_author_count_one_year_all + 1)~
+                                                log(project_age + 1)
+                                              + log(all_dev_alltime_count + 1)
+                                              + log(all_dev_recent_count + 1)
+                                              + log(all_past_commit_count + 1)
+                                              + log(recent_past_commit_count + 1)
+                                              + as.logical(woc_has_readme_flag)
+                                              + as.logical(woc_has_license_flag)
+                                          ,data = data_merge_no_outlier)
+vif(regression_no_environment_allnew)
+summary(regression_no_environment_allnew)
+
+
+
+regression_basic_allnew = lm(log(new_attracted_author_count_one_year_all + 1)~
+                                                log(project_age + 1)
+                                              + log(all_dev_alltime_count + 1)
+                                              + log(all_dev_recent_count + 1)
+                                              + log(all_past_commit_count + 1)
+                                              + log(recent_past_commit_count + 1)
+                                              + as.logical(woc_has_readme_flag)
+                                              + as.logical(woc_has_license_flag)
+                                              + log(all_has_embedding_social_within_one_hop_count + 1)
+                                          ,data = data_merge_no_outlier)
+
+vif(regression_basic_allnew)
+summary(regression_basic_allnew)
+
+
+regression_individual_allnew = lm(log(new_attracted_author_count_one_year_all + 1)~
+                                                log(project_age + 1)
+                                              + log(all_dev_alltime_count + 1)
+                                              + log(all_dev_recent_count + 1)
+                                              + log(all_past_commit_count + 1)
+                                              + log(recent_past_commit_count + 1)
+                                              + as.logical(woc_has_readme_flag)
+                                              + as.logical(woc_has_license_flag)
+                                              + log(all_has_embedding_social_within_one_hop_count + 1)
+                                              + individual_value_transformed
+                                           
+                                          ,data = data_merge_no_outlier)
+
+vif(regression_individual_allnew)
+summary(regression_individual_allnew)
+
+
+regression_full_allnew = lm(log(new_attracted_author_count_one_year_all + 1)~
+                                                log(project_age + 1)
+                                              + log(all_dev_alltime_count + 1)
+                                              + log(all_dev_recent_count + 1)
+                                              + log(all_past_commit_count + 1)
+                                              + log(recent_past_commit_count + 1)
+                                              + as.logical(woc_has_readme_flag)
+                                              + as.logical(woc_has_license_flag)
+                                              + log(all_has_embedding_social_within_one_hop_count + 1)
+                                              + all_value_transformed
+                                          ,data = data_merge_no_outlier)
+
+
+vif(regression_full_allnew)
+summary(regression_full_allnew)
+
+
+```
+
+
+### Generate Figure 2 in the paper
+```{r}
+devtools::install_github("tidyverse/ggplot2")
+install.packages("ggchicklet",                    # Install & load ggchicklet package
+                 repos = "https://cinc.rud.is")
+
+library(ggplot2)
+library(ggchicklet)
+library(ggtext)
+library(dplyr)
+library(forcats)
+library(grid)
+
+dat <- dat <- data.frame(
+Year = c("2015", "2015", "2015", "2015", "2016", "2016", "2016", "2016",
+          "2017", "2017", "2017", "2017", "2018", "2018", "2018", "2018",
+          "2019", "2019", "2019", "2019", "2020", "2020", "2020", "2020"),
+Distance = c("one hop", "two hops", "three hops", "four or more hops",
+          "one hop", "two hops", "three hops", "four or more hops",
+          "one hop", "two hops", "three hops", "four or more hops",
+          "one hop", "two hops", "three hops", "four or more hops",
+          "one hop", "two hops", "three hops", "four or more hops",
+          "one hop", "two hops", "three hops", "four or more hops"),
+Ratio = c(0.22862372, 0.10178636, 0.04668942, 0.62290050,
+          0.21098826, 0.09316911, 0.04100798, 0.65483464,
+          0.20751380, 0.09704588, 0.04186916, 0.65357116,
+          0.20052488, 0.07807841, 0.03820754, 0.68318918,
+          0.19417531, 0.07017961, 0.03118590, 0.70445918,
+          0.19970166, 0.07903111, 0.03087086, 0.69039636),
+stringsAsFactors = FALSE)
+
+# refactor levels
+dat <- dat %>% group_by(Year) %>% mutate(Percent = Ratio/sum(Ratio)) %>% ungroup() %>%
+mutate(Year = fct_relevel(
+  Year,
+  rev(c("2015", "2016", "2017", "2018", "2019", "2020")))
+) %>%
+mutate(Distance = fct_relevel(
+  Distance,
+  c("four or more hops", "three hops", "two hops", "one hop"))
+)
+
+# keep trailing zeroes and add "min" to first bar value labels
+dat$Label <- as.character(sprintf("%.2f", dat$Ratio))
+
+# generate plot
+gg <- ggplot(dat, aes(Year, Percent,  fill = Distance, label = Label)) +
+geom_chicklet(width = 1,radius = unit(6,units = "pt"), position = ggplot2::position_stack(reverse = FALSE)) +
+geom_text(size = 4, fontface= "bold", position = position_stack(vjust = 0.5)) +
+scale_y_continuous(limits = c(0,1),expand = c(0, 0)) +  coord_flip() +
+theme_minimal() +
+theme(
+      legend.position = "top",
+      plot.title = element_markdown(hjust =0.5),
+      plot.subtitle = element_markdown(hjust = 0.5),
+      plot.caption = element_markdown(hjust = 0, size = 11, margin = unit(c(0, 0, 0, 0), "cm"), color = "#718c9e"),
+      legend.text = element_markdown(size = 11),
+      axis.text = element_text(face = "bold", size = 11),
+      axis.text.x = element_blank(),
+      axis.title.y = element_markdown(hjust = 0, size = 20, margin = unit(c(0, 0, 0, 0), "cm"), color = "#718c9e"),
+      panel.grid = element_blank(),
+      axis.title.x = element_markdown(
+        halign = 0,
+        margin = margin(2, 0, 15, 0),
+        fill = "transparent"
+      )
+
+) +
+scale_fill_manual(
+  name = NULL,
+  values = c(`one hop` = "#4477AA", `two hops` = "#66CCEE", `three hops` = "#228833", `four or more hops` = "#CCBB44"),
+  labels = c(
+    `one hop` = "<strong>one hop</strong>",
+    `two hops` = "<strong>two hops</strong>",
+    `three hops` = "<strong>three hops</strong>",
+    `four or more hops` = "<strong>four or more hops</strong> (or not connected)"),
+  guide = guide_legend(reverse = TRUE)
+) +
+   labs(x = NULL, fill = NULL, y = NULL)
+# '2015' = "#4477AA", '2016' = "#66CCEE",'2017' = "#228833", '2018' = "#CCBB44", '2019' = '#EE6677', '2020' = '#AA3377'
+gg
+
+alignTitles <- function(ggplot, title = NULL, subtitle = NULL, caption = NULL) {
+# grab the saved ggplot2 object
+g <- ggplotGrob(ggplot)
+
+
+# find the object which provides the plot information for the title, subtitle, and caption
+if(!is.null(title)) {
+  g$layout[which(g$layout$name == "title"),]$l <- title
+}
+if(!is.null(subtitle)) {
+  g$layout[which(g$layout$name == "subtitle"),]$l <- subtitle
+}
+if(!is.null(caption)) {
+  g$layout[which(g$layout$name == "caption"),]$l <- caption
+}
+g
+}
+
+# align caption to y axis value labels
+gg2 <- alignTitles(gg, caption = 2)
+grid.draw(gg2)
+# add arrow
+x <- rev(c(0.25, 0.25, 0.28, 0.28))
+y <- rev(c(0.2, 0.15, 0.15, 0.15))
+grid.bezier(x, y, gp=gpar(lwd=1.5, fill="black"),
+          arrow=arrow(type="open",length = unit(0.1, "inches")))
+
+ggsave('./figure/new_contributors.pdf',width = 7, height = 3, dpi = 150)
+
+```
+
+### Generate Figure 5 in the paper
+```{r}
+library(ggplot2)
+library(ggpubr)
+data_prediction_individual = read_csv('./data/Manual_performance_aggregate.csv')
+scaleFUN <- function(x) sprintf("%.2f", x)
+title_font = 26
+axis_text_size = 16
+line_size = 1.5
+point_size = 5
+g_precision = ggplot(data_prediction_individual, aes(x=year)) + 
+  geom_point(aes(y = Individual_model_Precision, colour  = "No-Competition Model"), size = point_size, shape = 18) + 
+  geom_point(aes(y = Full_model_Precision, colour ="Full Model"), size = point_size, shape = 18) + 
+  geom_line(aes(y = Individual_model_Precision, colour  = "No-Competition Model"), size = line_size) + 
+  geom_line(aes(y = Full_model_Precision, colour ="Full Model"), size = line_size) + 
+  scale_colour_manual("", 
+                      breaks = c("No-Competition Model", "Full Model"),
+                      values = c("orange", "red"))+
+ ylab("Precision")+
+   xlab('Year') +
+  ggtitle("Precision")+
+  theme(plot.title = element_text(hjust = 0.5,size = title_font),
+        legend.text = element_text(size=20),
+        axis.text=element_text(size=axis_text_size),
+        axis.title=element_text(size=20),
+        panel.background = element_blank(),
+axis.line = element_line(colour = "black"))+
+   scale_y_continuous(limits = c(0,NA), labels=scaleFUN)+
+   scale_x_continuous(n.breaks=7)
+
+g_recall = ggplot(data_prediction_individual, aes(x=year)) + 
+  geom_point(aes(y = Individual_model_Recall, colour  = "No-Competition Model"), size = point_size, shape = 18) + 
+  geom_point(aes(y = Full_model_Recall, colour ="Full Model"), size = point_size, shape = 18) + 
+  geom_line(aes(y = Individual_model_Recall, colour  = "No-Competition Model"), size = line_size) + 
+  geom_line(aes(y = Full_model_Recall, colour ="Full Model"), size = line_size) + 
+  scale_colour_manual("", 
+                      breaks = c("No-Competition Model", "Full Model"),
+                      values = c("orange", "red"))+
+ ylab("Recall")+
+   xlab('Year') +
+  ggtitle("Recall")+
+  theme(plot.title = element_text(hjust = 0.5,size = title_font),
+        legend.text = element_text(size=20),
+        axis.text=element_text(size=axis_text_size),
+        axis.title=element_text(size=20),
+panel.background = element_blank(),
+axis.line = element_line(colour = "black"))+
+   scale_y_continuous(limits = c(0,NA), labels=scaleFUN)+
+   scale_x_continuous(n.breaks=7)
+
+
+
+g_F1 = ggplot(data_prediction_individual, aes(x=year)) + 
+  geom_point(aes(y = Individual_model_F1, colour  = "No-Competition Model"), size = point_size, shape = 18) + 
+  geom_point(aes(y = Full_model_F1, colour ="Full Model"), size = point_size, shape = 18) + 
+  geom_line(aes(y = Individual_model_F1, colour  = "No-Competition Model"), size = line_size) + 
+  geom_line(aes(y = Full_model_F1, colour ="Full Model"), size = line_size) + 
+  scale_colour_manual("", 
+                      breaks = c("No-Competition Model", "Full Model"),
+                      values = c("orange", "red"))+
+ ylab("F1 Score")+
+   xlab('Year') +
+  ggtitle("F1 Score")+
+  theme(plot.title = element_text(hjust = 0.5,size = title_font),
+        legend.text = element_text(size=20),
+        axis.text=element_text(size=axis_text_size),
+        axis.title=element_text(size=20),
+panel.background = element_blank(),
+axis.line = element_line(colour = "black"))+
+   scale_y_continuous(limits = c(0,NA), labels=scaleFUN)+
+   scale_x_continuous(n.breaks=7)
+
+ggarrange(g_precision, g_recall, g_F1, ncol=3, nrow=1, common.legend = TRUE, legend="bottom") 
+
+ggsave(file="./figure/precision_recall_f1.pdf", width=17, height=5, dpi=300)
+
+```
+
+
+
+
+### Generate Figure 6 in the paper 
+```{r}
+library(ggplot2)
+scaleFUN <- function(x) sprintf("%.4f", x)
+data_merge_no_outlier_has_license = subset(data_merge_no_outlier, woc_has_license_flag == TRUE)
+
+ggplot(data_merge_no_outlier_has_license, aes(x = as.factor(new_attracted_author_count_one_year_has_embedding), y = all_value_agg)) +
+geom_violin()+
+  stat_summary(fun=mean,  color="red")+
+xlab('Number of attracted new contributors (with at least ten valid commits)')+
+ylab('Effective labor pool size, full variables (log)')+ 
+scale_y_continuous(trans='log2', labels=scaleFUN)
+
+```
+
+
+
+
+
+
+
